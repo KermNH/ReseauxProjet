@@ -8,6 +8,9 @@ import java.net.Socket;
 //Un client manager créé par client, ils fonctionnent en parralèle sur des threads différents
 // gerent les interactions avec les clients puisque le serveur doit juste coordonner 
 
+
+
+
 //interface Runnable permet l'utilisation d'instances de cette classe dans des threads
 public class ClientManager implements Runnable {
     private Socket socket;
@@ -16,9 +19,12 @@ public class ClientManager implements Runnable {
     private String playerName;
     private boolean isGaming = false;
     private PlayerVSComputer currentGame;
+    private String ipAddress;
+    private int p2pPort;
 
     public ClientManager(Socket socket) {
         this.socket = socket;
+        this.ipAddress = socket.getInetAddress().getHostAddress();
     }
 
     // run vient avec l'interface Runnable, est executé quand le thread démare
@@ -48,28 +54,50 @@ public class ClientManager implements Runnable {
         // et envoyer des messages d'erreur si requete pas possible (genre room pleine)
         switch (command) {
             case "CONNECT":
+                if (parts.length < 4) {
+                    sendMessage("GG|ERROR|Format: GG|CONNECT|Name|P2PPort");
+                    return;
+                }
                 this.playerName = parts[2];
-                TCPServer.activeClients.put(this.playerName, this); //ajoute le joueur à la liste des clients actifs
+                this.p2pPort = Integer.parseInt(parts[3]); // Only if you added P2P logic
+                TCPServer.activeClients.put(this.playerName, this);
                 sendMessage("GG|CONNECTED|" + this.playerName);
                 break;
             case "CREATE_ROOM":
+                // Guard 3: Ensure we have RoomName, MaxPlayers, and MaxAttempts (5 parts total)
+                if (parts.length < 5) {
+                    sendMessage("GG|ERROR|Format: GG|CREATE_ROOM|Name|MaxPlayers|MaxAttempts");
+                    return;
+                }
                 String roomName = parts[2];
                 int maxPlayers = Integer.parseInt(parts[3]);
                 int maxAttempts = Integer.parseInt(parts[4]);
-                TCPServer.activeRooms.put(roomName, new GameRoom(roomName, this.playerName, maxPlayers, maxAttempts)); //création de la salle, l'admin est assigné automatiquement
+                TCPServer.activeRooms.put(roomName, new GameRoom(roomName, this.playerName, maxPlayers, maxAttempts));
                 sendMessage("GG|ROOM_CREATED|" + roomName);
-                break;
             case "LIST_ROOMS":
                 String roomList = String.join(",", TCPServer.activeRooms.keySet());
                 sendMessage("GG|ROOM_LIST|" + roomList);
                 break;
             case "JOIN_ROOM":
-                GameRoom roomToJoin = TCPServer.activeRooms.get(parts[2]);
-                if (roomToJoin != null && roomToJoin.addPlayer(this.playerName)) 
-                {
-                    sendMessage("GG|JOINED_ROOM|" + roomToJoin.roomName + "|" + roomToJoin.getPlayersListStr());
+                GameRoom roomToJoin = TCPServer.activeRooms.get(parts[2]); 
+            if (roomToJoin != null && roomToJoin.addPlayer(this.playerName)) { 
+                sendMessage("GG|JOINED_ROOM|" + roomToJoin.roomName + "|" + roomToJoin.getPlayersListStr()); 
+                
+                // --- NEW P2P MATCHMAKING LOGIC ---
+                // Tell the new player to connect to all existing players
+                for (String existingPlayerName : roomToJoin.players) {
+                    if (!existingPlayerName.equals(this.playerName)) {
+                        ClientManager existingClient = TCPServer.activeClients.get(existingPlayerName);
+                        if (existingClient != null) {
+                            // Tell this new client to connect to the existing client
+                            this.sendMessage("GG|CONNECT_PEER|" + existingClient.playerName + "|" + existingClient.ipAddress + "|" + existingClient.p2pPort);
+                            // Tell the existing client to prepare for/connect to the new client
+                            existingClient.sendMessage("GG|CONNECT_PEER|" + this.playerName + "|" + this.ipAddress + "|" + this.p2pPort);
+                        }
+                    }
                 }
-                break;
+            }
+            break;
             case "LEAVE_ROOM":
                 GameRoom roomToLeave = TCPServer.activeRooms.get(parts[2]);
                 if (roomToLeave != null )

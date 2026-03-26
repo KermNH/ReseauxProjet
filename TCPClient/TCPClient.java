@@ -7,6 +7,8 @@ import java.net.Socket;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
 
+
+
 public class TCPClient {
     private static final String SERVER_IP = "127.0.0.1";
     private static final int SERVER_PORT = 9090; //[cite: 41]
@@ -27,7 +29,10 @@ public class TCPClient {
                 while (true) {
                     try {
                         Socket peerSocket = p2pServer.accept();
+                        
                         System.out.println("\n[P2P] New peer connected from " + peerSocket.getRemoteSocketAddress());
+                        PeerHandler handler = new PeerHandler(peerSocket);
+                        new Thread(handler).start();
                         // TODO: You would start a new thread here to handle P2P messages (similar to ClientManager)
                     } catch (IOException e) {
                         e.printStackTrace();
@@ -84,6 +89,7 @@ public class TCPClient {
                 String peerName = parts[2];
                 String peerIp = parts[3];
                 int peerPort = Integer.parseInt(parts[4]);
+                System.out.println("[DEBUG] Attempting P2P connection to " + peerName + " at " + peerIp + ":" + peerPort);
                 connectToPeer(peerName, peerIp, peerPort);
                 break;
             default:
@@ -101,4 +107,6 @@ public class TCPClient {
             System.err.println("[P2P] Failed to connect to peer " + peerName + ": " + e.getMessage());
         }
     }
+
+
 }
