@@ -14,6 +14,8 @@ public class ClientManager implements Runnable {
     private BufferedReader in;  // utilisé pour recevoir les messages
     private PrintWriter out;  // utilisé pour envoyer les messages
     private String playerName;
+    private boolean isGaming = false;
+    private PlayerVSComputer currentGame;
 
     public ClientManager(Socket socket) {
         this.socket = socket;
@@ -66,6 +68,52 @@ public class ClientManager implements Runnable {
                 if (roomToJoin != null && roomToJoin.addPlayer(this.playerName)) 
                 {
                     sendMessage("GG|JOINED_ROOM|" + roomToJoin.roomName + "|" + roomToJoin.getPlayersListStr());
+                }
+                break;
+            case "LEAVE_ROOM":
+                GameRoom roomToLeave = TCPServer.activeRooms.get(parts[2]);
+                if (roomToLeave != null )
+                {
+                    roomToLeave.removePlayer(this.playerName);
+                    sendMessage("GG|LEAVE_ROOM|"+roomToLeave.roomName +" :A BIEN ÉTÉ QUITTÉ");
+                }
+                break;
+            case "PLAY_SERVER":
+                try {
+                    // Commande attendue : GG|PLAY_SERVER|10
+                    int nbTentatives = Integer.parseInt(parts[2]);
+
+                    // On initialise l'objet de jeu
+                    this.currentGame = new PlayerVSComputer(nbTentatives);
+                    this.isGaming = true;
+
+                    sendMessage("GG|GAME_STARTED|Bonne chance " + this.playerName);
+                } catch (Exception e) {
+                    sendMessage("GG|ERROR|Usage: GG|PLAY_SERVER|nbTentatives");
+                }
+                break;
+
+            case "GUESS":
+                // Commande attendue : GG|GUESS|RED|BLUE|GREEN|YELLOW
+                if (this.currentGame != null) {
+                    // Extraction des 4 couleurs (indices 2, 3, 4, 5)
+                    if (parts.length >= 6) {
+                        String[] playerGuess = {parts[2], parts[3], parts[4], parts[5]};
+
+                        // On demande au moteur de jeu d'analyser le coup
+                        String response = this.currentGame.handleGuess(playerGuess);
+                        sendMessage(response);
+
+                        // Si c'est fini, on nettoie
+                        if (this.currentGame.isGameOver()) {
+                            this.currentGame = null;
+                            this.isGaming = false;
+                        }
+                    } else {
+                        sendMessage("GG|ERROR|Format incorrect : GG|GUESS|C1|C2|C3|C4");
+                    }
+                } else {
+                    sendMessage("GG|ERROR|Aucune partie en cours contre le serveur.");
                 }
                 break;
             default:
