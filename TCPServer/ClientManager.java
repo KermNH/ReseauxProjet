@@ -63,9 +63,17 @@ public class ClientManager implements Runnable {
                 break;
             case "JOIN_ROOM":
                 GameRoom roomToJoin = TCPServer.activeRooms.get(parts[2]);
-                if (roomToJoin != null && roomToJoin.addPlayer(this.playerName)) 
+                if (roomToJoin != null && roomToJoin.addPlayer(this.playerName))
                 {
                     sendMessage("GG|JOINED_ROOM|" + roomToJoin.roomName + "|" + roomToJoin.getPlayersListStr());
+                }
+                break;
+            case "LEAVE_ROOM":
+                GameRoom roomToLeave = TCPServer.activeRooms.get(parts[2]);
+                if (roomToLeave != null )
+                {
+                    roomToLeave.removePlayer(this.playerName);
+                    sendMessage("GG|LEAVE_ROOM|"+roomToLeave.roomName +" :A BIEN ÉTÉ QUITTÉ");
                 }
                 break;
             default:

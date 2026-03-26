@@ -53,7 +53,7 @@ public class TCPClient
         //pour le moment on a rien, on ajoutera au besoin
         switch (command) {
             default:
-                System.out.println("Unknown command: " + command);
+                System.out.println("Unknown command coter clien: " + command);
         }
     }
 }
