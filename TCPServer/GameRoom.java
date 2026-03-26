@@ -8,6 +8,7 @@ public class GameRoom
     int maxPlayers;
     int maxAttempts;
     List<String> players;
+   
 
     public GameRoom(String name, String admin, int maxP, int maxA) 
     {
