@@ -8,6 +8,8 @@ public class GameRoom
     int maxPlayers;
     int maxAttempts;
     List<String> players;
+
+    String[] secretCode;
    
 
     public GameRoom(String name, String admin, int maxP, int maxA) 
@@ -42,5 +44,10 @@ public class GameRoom
     public synchronized String getPlayersListStr() 
     {
         return String.join(",", players);
+    }
+
+    public void setSecretCode(String code)
+    {
+        //il nous a pas dit comment déterminer le code secret de base
     }
 }

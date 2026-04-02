@@ -89,8 +89,14 @@ public class TCPClient {
                 String peerName = parts[2];
                 String peerIp = parts[3];
                 int peerPort = Integer.parseInt(parts[4]);
-                System.out.println("[DEBUG] Attempting P2P connection to " + peerName + " at " + peerIp + ":" + peerPort);
+                System.out.println("Attempting P2P connection to " + peerName + " at " + peerIp + ":" + peerPort);
                 connectToPeer(peerName, peerIp, peerPort);
+                break;
+            case "PLAYER_KICKED":
+                System.out.println("Vous avez été expulsé de la salle.");
+                break;
+            case "GAME_STARTED":
+                System.out.println("La partie commence !");
                 break;
             default:
                 // Expected server responses like JOINED_ROOM, ROOM_CREATED, etc.
@@ -98,6 +104,34 @@ public class TCPClient {
         }
     }
 
+    private static String evaluateGuess(String[] secretCode, String[] guess, String guessingPlayer)
+    {
+        int black = 0; //regles du MasterMind, bien placé
+        int white = 0;  // Bonne couleur mauvais endroit
+
+        for (int i = 0; i < 4; i++)
+        {
+            for (int j = 0; j < 4; j++)
+            {
+                if (guess[i].equalsIgnoreCase(secretCode[j]))
+                {
+                    if (i == j) black++;
+                    else white++;
+                    break; //à priori on a un seul exemplaire de chaque couleur dans la combinaison secrète,
+                    // on peut sortir de la boucle après le premier match
+                }
+             }
+        }
+
+        // Vérifier les conditions de victoire
+        if (black == 4) {
+            // Si une proposition correspond exactement à la combinaison secrète, le joueur annonce la victoire [cite: 67]
+            return "GG|WINNER|" + guessingPlayer;
+        } else {
+            // Le joueur détenteur de la combinaison secrète analyse la proposition et répond : GG|FEEDBACK|couleurs_correctes|positions_correctes
+            return "GG|FEEDBACK|" + white + "|" + black;
+        }
+    }
     private static void connectToPeer(String peerName, String ip, int port) {
         try {
             Socket peerSocket = new Socket(ip, port);

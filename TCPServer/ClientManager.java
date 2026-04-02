@@ -80,24 +80,24 @@ public class ClientManager implements Runnable {
                 break;
             case "JOIN_ROOM":
                 GameRoom roomToJoin = TCPServer.activeRooms.get(parts[2]); 
-            if (roomToJoin != null && roomToJoin.addPlayer(this.playerName)) { 
-                sendMessage("GG|JOINED_ROOM|" + roomToJoin.roomName + "|" + roomToJoin.getPlayersListStr()); 
-                
-                // --- NEW P2P MATCHMAKING LOGIC ---
-                // Tell the new player to connect to all existing players
-                for (String existingPlayerName : roomToJoin.players) {
-                    if (!existingPlayerName.equals(this.playerName)) {
-                        ClientManager existingClient = TCPServer.activeClients.get(existingPlayerName);
-                        if (existingClient != null) {
-                            // Tell this new client to connect to the existing client
-                            this.sendMessage("GG|CONNECT_PEER|" + existingClient.playerName + "|" + existingClient.ipAddress + "|" + existingClient.p2pPort);
-                            // Tell the existing client to prepare for/connect to the new client
-                            existingClient.sendMessage("GG|CONNECT_PEER|" + this.playerName + "|" + this.ipAddress + "|" + this.p2pPort);
+                if (roomToJoin != null && roomToJoin.addPlayer(this.playerName)) {
+                    sendMessage("GG|JOINED_ROOM|" + roomToJoin.roomName + "|" + roomToJoin.getPlayersListStr());
+
+                    // --- NEW P2P MATCHMAKING LOGIC ---
+                    // Tell the new player to connect to all existing players
+                    for (String existingPlayerName : roomToJoin.players) {
+                        if (!existingPlayerName.equals(this.playerName)) {
+                            ClientManager existingClient = TCPServer.activeClients.get(existingPlayerName);
+                            if (existingClient != null) {
+                                // Tell this new client to connect to the existing client
+                                this.sendMessage("GG|CONNECT_PEER|" + existingClient.playerName + "|" + existingClient.ipAddress + "|" + existingClient.p2pPort);
+                                // Tell the existing client to prepare for/connect to the new client
+                                existingClient.sendMessage("GG|CONNECT_PEER|" + this.playerName + "|" + this.ipAddress + "|" + this.p2pPort);
+                            }
                         }
                     }
                 }
-            }
-            break;
+                break;
             case "LEAVE_ROOM":
                 GameRoom roomToLeave = TCPServer.activeRooms.get(parts[2]);
                 if (roomToLeave != null )
@@ -144,6 +144,38 @@ public class ClientManager implements Runnable {
                     sendMessage("GG|ERROR|Aucune partie en cours contre le serveur.");
                 }
                 break;
+
+            case "KICK_PLAYER":
+                if (parts.length < 4) return;
+                GameRoom roomToKickFrom = TCPServer.activeRooms.get(parts[2]);
+                String playerToKick = parts[3];
+
+                //on vérifie que la salle existe et que le joueur demandant le kick en est l'admin
+                if (roomToKickFrom != null && roomToKickFrom.adminName.equals(this.playerName)) {
+                    roomToKickFrom.removePlayer(playerToKick);
+                    ClientManager kickedClient = TCPServer.activeClients.get(playerToKick);
+                    if (kickedClient != null) {
+                        kickedClient.sendMessage("GG|PLAYER_KICKED|" + playerToKick);
+                    }
+                }
+                break;
+
+            case "START_GAME":
+                if (parts.length < 3) return;
+                GameRoom roomToStart = TCPServer.activeRooms.get(parts[2]);
+
+                if (roomToStart != null) {
+                    String playerList = roomToStart.getPlayersListStr();
+                    // Indique à ts les joueurs que la partie commence
+                    for (String pName : roomToStart.players) {
+                        ClientManager pClient = TCPServer.activeClients.get(pName);
+                        if (pClient != null) {
+                            pClient.sendMessage("GG|GAME_STARTED|" + roomToStart.roomName + "|" + playerList);
+                        }
+                    }
+                }
+                break;
+
             default:
                 System.out.println("Unknown command: " + command);
         }
