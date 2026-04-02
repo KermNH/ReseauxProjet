@@ -16,6 +16,7 @@ public class TCPClient {
     // Store active P2P connections
     private static ConcurrentHashMap<String, Socket> peerConnections = new ConcurrentHashMap<>();
     private static int myP2PPort;
+    public static int GameMaster;//-1 = player|0 = gameMaster not yet set|1 = GameMaster
 
     public static void main(String[] args) {
         // 1. Start a P2P Server Socket on a dynamic port (0 means auto-assign)
@@ -68,9 +69,29 @@ public class TCPClient {
 
             // Tell user to include the P2P port when connecting
             System.out.println("Enter command to connect (e.g., GG|CONNECT|Alice|" + myP2PPort + "):");
+            //MESSAGE SENDER
             while (true) {
                 String input = scanner.nextLine();
+                String[] parts = input.split("\\|"); //[cite: 48]
+                if (parts.length < 2 || !parts[0].equals("GG")) return; //[cite: 48]
+                String command = parts[1];
+                switch(command){
+                    case "SECRET_SET":
+                        if(GameMaster==0){
+                            GameMaster=1;
+                            for(String key : peerConnections.keySet()){
+                                sendMessageToUser(key, input);
+                            }
+                        }
+                    case "GUESS":
+                    case "FEEDBACK":
+                    case "WINNER":
+                    default : 
+                        out.println(input);
+                        break;
+                }
                 out.println(input); //[cite: 46]
+                
             }
 
         } catch (IOException e) {
@@ -97,6 +118,13 @@ public class TCPClient {
                 break;
             case "GAME_STARTED":
                 System.out.println("La partie commence !");
+                break;
+            case "SECRET_SET":
+                
+                if(GameMaster<1){
+                    GameMaster=-1;
+                } 
+                System.out.println("\n[JEU] " + parts[2] + " a défini la combinaison secrète.");
                 break;
             default:
                 // Expected server responses like JOINED_ROOM, ROOM_CREATED, etc.
@@ -142,5 +170,12 @@ public class TCPClient {
         }
     }
 
+    public static void sendMessageToUser(String targetUserId, String message) {
+    Socket socket = peerConnections.get(targetUserId);
+    if (socket != null && !socket.isClosed()) {
+        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+        out.println(message);
+    }
+}
 
 }
