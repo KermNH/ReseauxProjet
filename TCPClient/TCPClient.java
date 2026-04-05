@@ -6,17 +6,23 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.LinkedList;
+import java.util.Queue;
+
 
 
 
 public class TCPClient {
     private static final String SERVER_IP = "127.0.0.1";
     private static final int SERVER_PORT = 9090; //[cite: 41]
-    
+    private static final Queue<String> GuessNameQueue = new LinkedList<>();
+
     // Store active P2P connections
     private static ConcurrentHashMap<String, Socket> peerConnections = new ConcurrentHashMap<>();
     private static int myP2PPort;
-    public static int GameMaster;//-1 = player|0 = gameMaster not yet set|1 = GameMaster
+    private static volatile int GameMaster = 0;//-1 = player|0 = gameMaster not yet set|1 = GameMaster
+    private static String GameMasterName;
+    private static String Name;
 
     public static void main(String[] args) {
         // 1. Start a P2P Server Socket on a dynamic port (0 means auto-assign)
@@ -68,7 +74,7 @@ public class TCPClient {
             listenerThread.start(); //[cite: 45]
 
             // Tell user to include the P2P port when connecting
-            System.out.println("Enter command to connect (e.g., GG|CONNECT|Alice|" + myP2PPort + "):");
+            System.out.println("Enter command to connect (e.g., GG|CONNECT|Alice)");
             //MESSAGE SENDER
             while (true) {
                 String input = scanner.nextLine();
@@ -77,20 +83,55 @@ public class TCPClient {
                 String command = parts[1];
                 switch(command){
                     case "SECRET_SET":
-                        if(GameMaster==0){
-                            GameMaster=1;
-                            for(String key : peerConnections.keySet()){
-                                sendMessageToUser(key, input);
+                        if(parts.length == 3){
+                            if(GameMaster==0){
+                                GameMaster=1;
+                                for(String key : peerConnections.keySet()){
+                                    sendMessageToUser(key, input);
+                                }
                             }
                         }
+                        break;
                     case "GUESS":
+                        System.out.println("guess");
+                        if(parts.length == 6){
+                            System.out.println("good size");
+                            if(GameMaster == 0){
+                                System.out.println("is not gamemaster");
+                                input = addName(input);
+                                sendMessageToUser(GameMasterName, input);
+                            }
+                        }
+                        break;
                     case "FEEDBACK":
+                        if(parts.length == 4){
+                            if(GameMaster==1){
+                                if(GuessNameQueue.size()>0){
+                                    String nextPlayer = GuessNameQueue.poll();
+                                    sendMessageToUser(nextPlayer, input);
+                                }else {
+                                    System.out.println("No more guesses in the queue.");
+                                }
+                            }
+                        }
+                        break;
                     case "WINNER":
+                        if(parts.length == 3){
+                            if(GameMaster==1){
+                                for(String key : peerConnections.keySet()){
+                                    sendMessageToUser(key, input);
+                                }
+                            }
+                        }
+                        break;
+                    case "CONNECT":
+                        input = addPort(input);
+                        out.println(input);
+                        break;
                     default : 
                         out.println(input);
                         break;
                 }
-                out.println(input); //[cite: 46]
                 
             }
 
@@ -120,11 +161,18 @@ public class TCPClient {
                 System.out.println("La partie commence !");
                 break;
             case "SECRET_SET":
-                
-                if(GameMaster<1){
-                    GameMaster=-1;
-                } 
+                SetGameMaster(-1);
+                GameMasterName=parts[2];
                 System.out.println("\n[JEU] " + parts[2] + " a défini la combinaison secrète.");
+                break;
+            case "GUESS":
+                if(GameMaster==1){
+                    System.out.println(parts[6]+" guess: "+parts[2]+", "+parts[3]+", "+parts[4]+", "+parts[5]);
+                    GuessNameQueue.add(parts[6]);
+                }
+                break;
+            case "CONNECTED":
+                Name=parts[2];
                 break;
             default:
                 // Expected server responses like JOINED_ROOM, ROOM_CREATED, etc.
@@ -171,11 +219,41 @@ public class TCPClient {
     }
 
     public static void sendMessageToUser(String targetUserId, String message) {
-    Socket socket = peerConnections.get(targetUserId);
-    if (socket != null && !socket.isClosed()) {
-        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-        out.println(message);
+         Socket socket = peerConnections.get(targetUserId);
+        if (socket != null && !socket.isClosed()) {
+             try {
+                // socket.getOutputStream() can throw IOException
+                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+                out.println(message);
+                System.out.println("sending message to :"+ targetUserId);
+            } catch (IOException e) {
+                System.err.println("[P2P] Error sending message to " + targetUserId + ": " + e.getMessage());
+               // Optional: Remove the broken socket from the map
+                peerConnections.remove(targetUserId);
+            }
+        } else {
+            System.out.println("[P2P] Could not find active connection for: " + targetUserId);
+        }
     }
-}
+
+    private static String addPort(String input){
+        StringBuilder sb = new StringBuilder(input);
+        sb.append("|");
+        sb.append(myP2PPort);
+        String result = sb.toString();
+        return result;
+    }
+
+    private static String addName(String input){
+        StringBuilder sb = new StringBuilder(input);
+        sb.append("|");
+        sb.append(Name);
+        String result = sb.toString();
+        return result;
+    }
+    private static void SetGameMaster(int i){
+        GameMaster=i;
+        System.out.println(GameMaster);
+    }
 
 }
