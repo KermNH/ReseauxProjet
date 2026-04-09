@@ -8,21 +8,23 @@ import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.LinkedList;
 import java.util.Queue;
-
-
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 
 public class TCPClient {
     private   final String SERVER_IP = "127.0.0.1";
     private   final int SERVER_PORT = 9090; //[cite: 41]
+    private String[] secretCode = new String[4];
     private   final Queue<String> GuessNameQueue = new LinkedList<>();
-
     // Store active P2P connections
-    private   ConcurrentHashMap<String, Socket> peerConnections = new ConcurrentHashMap<>();
+    public   ConcurrentHashMap<String, Socket> peerConnections = new ConcurrentHashMap<>();
     private   int myP2PPort;
-    private   volatile int GameMaster = 0;//-1 = player|0 = gameMaster not yet set|1 = GameMaster
-    private   String GameMasterName;
+    public   volatile int GameMaster = 0;//-1 = player|0 = gameMaster not yet set|1 = GameMaster
+    public   String GameMasterName;
     private   String Name;
+    private int maxAttempts = 0;
+    private int myCurrentAttempts = 0; // Pour le joueur local
+    private ConcurrentHashMap<String, Integer> playerAttempts = new ConcurrentHashMap<>(); // Pour le Host
 
     public   void main(String[] args) {
         // 1. Start a P2P Server Socket on a dynamic port (0 means auto-assign)
@@ -38,7 +40,7 @@ public class TCPClient {
                         Socket peerSocket = p2pServer.accept();
                         
                         System.out.println("\n[P2P] New peer connected from " + peerSocket.getRemoteSocketAddress());
-                        PeerHandler handler = new PeerHandler(peerSocket);
+                        PeerHandler handler = new PeerHandler(peerSocket, this);
                         new Thread(handler).start();
                         // TODO: You would start a new thread here to handle P2P messages (similar to ClientManager)
                     } catch (IOException e) {
@@ -83,35 +85,43 @@ public class TCPClient {
                 String command = parts[1];
                 switch(command){
                     case "SECRET_SET":
-                        if(parts.length == 3){
-                            if(GameMaster==0){
-                                GameMaster=1;
-                                for(String key : peerConnections.keySet()){
-                                    sendMessageToUser(key, input);
-                                }
+                        if(parts.length == 6) { // Format attendu: GG|SECRET_SET|Rouge|Bleu|Vert|Jaune
+                            this.secretCode[0] = parts[2];
+                            this.secretCode[1] = parts[3];
+                            this.secretCode[2] = parts[4];
+                            this.secretCode[3] = parts[5];
+                            this.GameMaster = 1;
+                            System.out.println("Combinaison secrète définie ! Vous êtes le Game Master.");
+
+                            // Informer les autres que la partie commence (sans révéler le secret !)
+                            for(String key : peerConnections.keySet()){
+                                sendMessageToUser(key, "GG|SECRET_SET|" + this.Name);
                             }
+                        } else {
+                            System.out.println("Usage: GG|SECRET_SET|Couleur1|Couleur2|Couleur3|Couleur4");
                         }
                         break;
+
                     case "GUESS":
-                        System.out.println("guess");
+                        if (this.maxAttempts > 0 && this.myCurrentAttempts >= this.maxAttempts) {
+                            System.out.println("Dommage ! Vous avez épuisé vos " + maxAttempts + " tentatives.");
+                            break;
+                        }
+
                         if(parts.length == 6){
-                            System.out.println("good size");
-                            if(GameMaster == 0){
-                                System.out.println("is not gamemaster");
-                                input = addName(input);
-                                sendMessageToUser(GameMasterName, input);
+                            if(this.GameMaster == -1){
+                                this.myCurrentAttempts++; // Incrémenter localement
+                                String msgWithName = addName(input);
+                                sendMessageToUser(GameMasterName, msgWithName);
                             }
                         }
                         break;
+
                     case "FEEDBACK":
-                        if(parts.length == 4){
-                            if(GameMaster==1){
-                                if(GuessNameQueue.size()>0){
-                                    String nextPlayer = GuessNameQueue.poll();
-                                    sendMessageToUser(nextPlayer, input);
-                                }else {
-                                    System.out.println("No more guesses in the queue.");
-                                }
+                        if(this.GameMaster == 1){
+                            String nextPlayer = GuessNameQueue.poll();
+                            if(nextPlayer != null){
+                                sendMessageToUser(nextPlayer, input);
                             }
                         }
                         break;
@@ -158,7 +168,20 @@ public class TCPClient {
                 System.out.println("Vous avez été expulsé de la salle.");
                 break;
             case "GAME_STARTED":
-                System.out.println("La partie commence !");
+                // On vérifie qu'on a bien au moins 5 éléments (0 à 4)
+                if (parts.length >= 5) {
+                    try {
+                        // C'est l'index 4 qui contient maxAttempts
+                        this.maxAttempts = Integer.parseInt(parts[4]);
+                        this.myCurrentAttempts = 0;
+                        System.out.println("La partie commence ! Salle: " + parts[2]);
+                        System.out.println("Joueurs: " + parts[3]);
+                        System.out.println("Tentatives max : " + maxAttempts);
+                    } catch (NumberFormatException e) {
+                        System.err.println("Erreur format maxAttempts: " + parts[4]);
+                        this.maxAttempts = 10; // Valeur de secours
+                    }
+                }
                 break;
             case "SECRET_SET":
                 //SetGameMaster(-1);
@@ -182,31 +205,48 @@ public class TCPClient {
         }
     }
 
-    private   String evaluateGuess(String[] secretCode, String[] guess, String guessingPlayer)
-    {
-        int black = 0; //regles du MasterMind, bien placé
-        int white = 0;  // Bonne couleur mauvais endroit
+    public String evaluateGuess(String[] guess, String guessingPlayer) {
+        // 1. Incrémenter le compteur du joueur chez le Host
+        int current = playerAttempts.getOrDefault(guessingPlayer, 0) + 1;
+        playerAttempts.put(guessingPlayer, current);
 
-        for (int i = 0; i < 4; i++)
-        {
-            for (int j = 0; j < 4; j++)
-            {
-                if (guess[i].equalsIgnoreCase(secretCode[j]))
-                {
-                    if (i == j) black++;
-                    else white++;
-                    break; //à priori on a un seul exemplaire de chaque couleur dans la combinaison secrète,
-                    // on peut sortir de la boucle après le premier match
-                }
-             }
+        int black = 0; // Bien placé
+        int white = 0; // Bonne couleur, mauvais endroit
+
+        // On utilise des drapeaux pour ne pas compter deux fois la même bille
+        boolean[] secretUsed = new boolean[4];
+        boolean[] guessUsed = new boolean[4];
+
+        // Premier passage : les billes bien placées (Noires)
+        for (int i = 0; i < 4; i++) {
+            if (guess[i].equalsIgnoreCase(secretCode[i])) {
+                black++;
+                secretUsed[i] = true;
+                guessUsed[i] = true;
+            }
         }
 
-        // Vérifier les conditions de victoire
+        // Second passage : les bonnes couleurs mal placées (Blanches)
+        for (int i = 0; i < 4; i++) {
+            if (!guessUsed[i]) {
+                for (int j = 0; j < 4; j++) {
+                    if (!secretUsed[j] && guess[i].equalsIgnoreCase(secretCode[j])) {
+                        white++;
+                        secretUsed[j] = true;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (black == 4) {
-            // Si une proposition correspond exactement à la combinaison secrète, le joueur annonce la victoire [cite: 67]
             return "GG|WINNER|" + guessingPlayer;
-        } else {
-            // Le joueur détenteur de la combinaison secrète analyse la proposition et répond : GG|FEEDBACK|couleurs_correctes|positions_correctes
+        }
+        else if (current >= maxAttempts) {
+            return "GG|GAMEOVER|" + guessingPlayer;
+        }
+
+        else {
             return "GG|FEEDBACK|" + white + "|" + black;
         }
     }
@@ -221,16 +261,15 @@ public class TCPClient {
     }
 
     public   void sendMessageToUser(String targetUserId, String message) {
-         Socket socket = peerConnections.get(targetUserId);
+        Socket socket = peerConnections.get(targetUserId);
         if (socket != null && !socket.isClosed()) {
              try {
-                // socket.getOutputStream() can throw IOException
+
                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
                 out.println(message);
                 System.out.println("sending message to :"+ targetUserId);
             } catch (IOException e) {
                 System.err.println("[P2P] Error sending message to " + targetUserId + ": " + e.getMessage());
-               // Optional: Remove the broken socket from the map
                 peerConnections.remove(targetUserId);
             }
         } else {

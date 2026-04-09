@@ -170,7 +170,7 @@ public class ClientManager implements Runnable {
                     for (String pName : roomToStart.players) {
                         ClientManager pClient = TCPServer.activeClients.get(pName);
                         if (pClient != null) {
-                            pClient.sendMessage("GG|GAME_STARTED|" + roomToStart.roomName + "|" + playerList);
+                            pClient.sendMessage("GG|GAME_STARTED|" + roomToStart.roomName + "|" + playerList + "|" +roomToStart.maxAttempts);
                         }
                     }
                 }
