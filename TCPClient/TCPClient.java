@@ -13,18 +13,18 @@ import java.util.Queue;
 
 
 public class TCPClient {
-    private static final String SERVER_IP = "127.0.0.1";
-    private static final int SERVER_PORT = 9090; //[cite: 41]
-    private static final Queue<String> GuessNameQueue = new LinkedList<>();
+    private   final String SERVER_IP = "127.0.0.1";
+    private   final int SERVER_PORT = 9090; //[cite: 41]
+    private   final Queue<String> GuessNameQueue = new LinkedList<>();
 
     // Store active P2P connections
-    private static ConcurrentHashMap<String, Socket> peerConnections = new ConcurrentHashMap<>();
-    private static int myP2PPort;
-    private static volatile int GameMaster = 0;//-1 = player|0 = gameMaster not yet set|1 = GameMaster
-    private static String GameMasterName;
-    private static String Name;
+    private   ConcurrentHashMap<String, Socket> peerConnections = new ConcurrentHashMap<>();
+    private   int myP2PPort;
+    private   volatile int GameMaster = 0;//-1 = player|0 = gameMaster not yet set|1 = GameMaster
+    private   String GameMasterName;
+    private   String Name;
 
-    public static void main(String[] args) {
+    public   void main(String[] args) {
         // 1. Start a P2P Server Socket on a dynamic port (0 means auto-assign)
         try {
             ServerSocket p2pServer = new ServerSocket(0);
@@ -140,7 +140,7 @@ public class TCPClient {
         }
     }
 
-    private static void processMessage(String message) {
+    private   void processMessage(String message) {
         String[] parts = message.split("\\|"); //[cite: 48]
         if (parts.length < 2 || !parts[0].equals("GG")) return; //[cite: 48]
 
@@ -161,8 +161,10 @@ public class TCPClient {
                 System.out.println("La partie commence !");
                 break;
             case "SECRET_SET":
-                SetGameMaster(-1);
-                GameMasterName=parts[2];
+                //SetGameMaster(-1);
+                this.GameMaster=-1;
+                System.out.println(this.GameMaster);
+                this.GameMasterName=parts[2];
                 System.out.println("\n[JEU] " + parts[2] + " a défini la combinaison secrète.");
                 break;
             case "GUESS":
@@ -180,7 +182,7 @@ public class TCPClient {
         }
     }
 
-    private static String evaluateGuess(String[] secretCode, String[] guess, String guessingPlayer)
+    private   String evaluateGuess(String[] secretCode, String[] guess, String guessingPlayer)
     {
         int black = 0; //regles du MasterMind, bien placé
         int white = 0;  // Bonne couleur mauvais endroit
@@ -208,7 +210,7 @@ public class TCPClient {
             return "GG|FEEDBACK|" + white + "|" + black;
         }
     }
-    private static void connectToPeer(String peerName, String ip, int port) {
+    private   void connectToPeer(String peerName, String ip, int port) {
         try {
             Socket peerSocket = new Socket(ip, port);
             peerConnections.put(peerName, peerSocket);
@@ -218,7 +220,7 @@ public class TCPClient {
         }
     }
 
-    public static void sendMessageToUser(String targetUserId, String message) {
+    public   void sendMessageToUser(String targetUserId, String message) {
          Socket socket = peerConnections.get(targetUserId);
         if (socket != null && !socket.isClosed()) {
              try {
@@ -236,7 +238,7 @@ public class TCPClient {
         }
     }
 
-    private static String addPort(String input){
+    private   String addPort(String input){
         StringBuilder sb = new StringBuilder(input);
         sb.append("|");
         sb.append(myP2PPort);
@@ -244,16 +246,16 @@ public class TCPClient {
         return result;
     }
 
-    private static String addName(String input){
+    private   String addName(String input){
         StringBuilder sb = new StringBuilder(input);
         sb.append("|");
         sb.append(Name);
         String result = sb.toString();
         return result;
     }
-    private static void SetGameMaster(int i){
-        GameMaster=i;
-        System.out.println(GameMaster);
+    private  void SetGameMaster(int i){
+        this.GameMaster=i;
+        System.out.println(this.GameMaster);
     }
 
 }
