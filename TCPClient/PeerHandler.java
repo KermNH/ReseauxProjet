@@ -44,23 +44,23 @@ public class PeerHandler implements Runnable {
 
                                 String response = parentClient.evaluateGuess(playerGuess, playerName);
                                 parentClient.sendMessageToUser(playerName, response);
-                                /*if (response.startsWith("GG|WINNER")) {
+                                if (response.startsWith("GG|WINNER")) {
                                     // Diffuser la fin de partie à tout le monde
                                     for(String peer : parentClient.peerConnections.keySet()) {
                                         parentClient.sendMessageToUser(peer, response);
                                     }
-                                }*/
+                                }
                             }
                             break;
                         case "FEEDBACK":
-                            System.out.println("\n[JEU] Résultat: " + parts[2] + " couleurs correctes, " + parts[3] + " bien placées.");
+                            System.out.println("\n[JEU] Résultat: " + parts[2] + " couleurs dans la combinaison, " + parts[3] + " bien placées.");
                             break;
                         case "WINNER":
                             System.out.println("\n[JEU] LA PARTIE EST TERMINÉE ! " + parts[2] + " a gagné !");
                             break;
-                        case "NEW_GAME":
+                        /*case "NEW_GAME":
                             System.out.println("\n[JEU] Une nouvelle partie a été lancée.");
-                            break;
+                            break;*/
                         case "GAMEOVER":
                             System.out.println("\n[JEU] " + parts[2] + " a épuisé toutes ses tentatives !");
                             break;

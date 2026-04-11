@@ -38,8 +38,6 @@ public class TCPClient {
                 while (true) {
                     try {
                         Socket peerSocket = p2pServer.accept();
-                        
-                        System.out.println("\n[P2P] New peer connected from " + peerSocket.getRemoteSocketAddress());
                         PeerHandler handler = new PeerHandler(peerSocket, this);
                         new Thread(handler).start();
                         // TODO: You would start a new thread here to handle P2P messages (similar to ClientManager)
@@ -66,7 +64,7 @@ public class TCPClient {
                 try {
                     String serverResponse;
                     while ((serverResponse = in.readLine()) != null) {
-                        System.out.println("\n[SERVER]: " + serverResponse); //[cite: 43]
+                        //System.out.println("\n[SERVER]: " + serverResponse); //[cite: 43]
                         processMessage(serverResponse);
                     }
                 } catch (IOException e) {
@@ -81,7 +79,11 @@ public class TCPClient {
             while (true) {
                 String input = scanner.nextLine();
                 String[] parts = input.split("\\|"); //[cite: 48]
-                if (parts.length < 2 || !parts[0].equals("GG")) return; //[cite: 48]
+                if (input.isEmpty()) continue;
+                if (parts.length < 2 || !parts[0].equals("GG")) {
+                    System.out.println("[Warning] Le message devrais commencer par 'GG|' si vous voulez interagire avec le serveur ou les joueur");
+                    continue;
+                } //[cite: 48]
                 String command = parts[1];
                 switch(command){
                     case "SECRET_SET":
@@ -103,6 +105,14 @@ public class TCPClient {
                         break;
 
                     case "GUESS":
+                        if (this.GameMaster == 0) {
+                            System.out.println("[ERREUR] Aucune partie n'est en cours. Attendez que le Game Master définisse le secret.");
+                            break;
+                        }
+                        if (this.GameMaster == 1) {
+                            System.out.println("[ERREUR] Vous êtes le Game Master ! Vous ne pouvez pas joué contre Vous-même.");
+                            break;
+                        }
                         if (this.maxAttempts > 0 && this.myCurrentAttempts >= this.maxAttempts) {
                             System.out.println("Dommage ! Vous avez épuisé vos " + maxAttempts + " tentatives.");
                             break;
@@ -150,77 +160,118 @@ public class TCPClient {
         }
     }
 
-    private   void processMessage(String message) {
-        String[] parts = message.split("\\|"); //[cite: 48]
-        if (parts.length < 2 || !parts[0].equals("GG")) return; //[cite: 48]
+    private void processMessage(String message) {
+        String[] parts = message.split("\\|");
+        if (parts.length < 2 || !parts[0].equals("GG")) return;
 
         String command = parts[1];
         switch (command) {
             case "CONNECT_PEER":
-                // The server told us to connect to a new peer in the room
+                // Reçu lors du START_GAME pour chaque autre joueur
                 String peerName = parts[2];
                 String peerIp = parts[3];
-                int peerPort = Integer.parseInt(parts[4]);
-                System.out.println("Attempting P2P connection to " + peerName + " at " + peerIp + ":" + peerPort);
-                connectToPeer(peerName, peerIp, peerPort);
+                try {
+                    int peerPort = Integer.parseInt(parts[4]);
+                    System.out.println("[P2P] Tentative de connexion vers " + peerName + " (" + peerIp + ":" + peerPort + ")");
+                    connectToPeer(peerName, peerIp, peerPort);
+                } catch (NumberFormatException e) {
+                    System.err.println("[P2P] Port invalide reçu pour " + peerName);
+                }
                 break;
+
             case "PLAYER_KICKED":
-                System.out.println("Vous avez été expulsé de la salle.");
+                System.out.println("\n[ALERTE] Vous avez été expulsé de la salle !");
+                // --- LOGIQUE DE NETTOYAGE ---
+                // 1. Fermer les sockets P2P
+                for (String pName : peerConnections.keySet()) {
+                    try {
+                        Socket s = peerConnections.get(pName);
+                        if (s != null) s.close();
+                    } catch (IOException e) { /* Ignoré */ }
+                }
+                // 2. Reset des structures et variables
+                peerConnections.clear();
+                playerAttempts.clear();
+                GuessNameQueue.clear();
+                this.GameMaster = 0;
+                this.maxAttempts = 0;
+                this.myCurrentAttempts = 0;
+                this.GameMasterName = null;
+
                 break;
+
             case "GAME_STARTED":
-                // On vérifie qu'on a bien au moins 5 éléments (0 à 4)
+                // Format: GG|GAME_STARTED|RoomName|PlayerList|MaxAttempts
                 if (parts.length >= 5) {
                     try {
-                        // C'est l'index 4 qui contient maxAttempts
                         this.maxAttempts = Integer.parseInt(parts[4]);
                         this.myCurrentAttempts = 0;
-                        System.out.println("La partie commence ! Salle: " + parts[2]);
-                        System.out.println("Joueurs: " + parts[3]);
-                        System.out.println("Tentatives max : " + maxAttempts);
+                        System.out.println("\n==============================");
+                        System.out.println("LA PARTIE COMMENCE !");
+                        System.out.println("Salle : " + parts[2]);
+                        System.out.println("Joueurs en lice : " + parts[3]);
+                        System.out.println("Limite d'essais : " + maxAttempts);
+                        System.out.println("==============================\n");
                     } catch (NumberFormatException e) {
-                        System.err.println("Erreur format maxAttempts: " + parts[4]);
-                        this.maxAttempts = 10; // Valeur de secours
+                        this.maxAttempts = 10;
                     }
                 }
                 break;
-            case "SECRET_SET":
-                //SetGameMaster(-1);
-                this.GameMaster=-1;
-                System.out.println(this.GameMaster);
-                this.GameMasterName=parts[2];
-                System.out.println("\n[JEU] " + parts[2] + " a défini la combinaison secrète.");
-                break;
-            case "GUESS":
-                if(GameMaster==1){
-                    System.out.println(parts[6]+" guess: "+parts[2]+", "+parts[3]+", "+parts[4]+", "+parts[5]);
+
+           /* case "SECRET_SET":
+                // Quelqu'un a défini le secret, on devient officiellement un joueur (guesser)
+                this.GameMaster = -1;
+                this.GameMasterName = parts[2];
+                System.out.println("\n[JEU] " + GameMasterName + " est le Maître du Jeu. À vous de deviner !");
+                break;*/
+
+           /* case "GUESS":
+                // Si le serveur relaie un GUESS (cas rare en Full P2P, mais utile en backup)
+                if (this.GameMaster == 1) {
+                    System.out.println("[INFO] " + parts[6] + " propose : " + parts[2] + " " + parts[3] + " " + parts[4] + " " + parts[5]);
                     GuessNameQueue.add(parts[6]);
                 }
-                break;
+                break;*/
+
             case "CONNECTED":
-                Name=parts[2];
+                this.Name = parts[2];
+                System.out.println("[INFO] Votre nom est enregistré : " + Name);
                 break;
+
+            case "ROOM_CREATED":
+                System.out.println("[SUCCÈS] Salle créée : " + parts[2]);
+                break;
+
+            case "JOINED_ROOM":
+                System.out.println("[SUCCÈS] Vous avez rejoint : " + parts[2]);
+                System.out.println("Joueurs présents : " + parts[3]);
+                break;
+
             default:
-                // Expected server responses like JOINED_ROOM, ROOM_CREATED, etc.
-                break; 
+                // Pour toutes les autres réponses (ROOM_LIST, etc.)
+                System.out.println("\n[SERVEUR]: " + message);
+                break;
         }
     }
 
     public String evaluateGuess(String[] guess, String guessingPlayer) {
-        // 1. Incrémenter le compteur du joueur chez le Host
+       // Celui qui fait deviner le code a une liste de toutes les tentatives
+       // et retourne un message si le joueur a dépassé le maximum de tentatives.
         int current = playerAttempts.getOrDefault(guessingPlayer, 0) + 1;
         playerAttempts.put(guessingPlayer, current);
 
         int black = 0; // Bien placé
-        int white = 0; // Bonne couleur, mauvais endroit
+        int white = 0; // Bonne couleur
 
-        // On utilise des drapeaux pour ne pas compter deux fois la même bille
+        // On utilise des drapeaux pour ne pas compter deux fois la même couleurs
         boolean[] secretUsed = new boolean[4];
         boolean[] guessUsed = new boolean[4];
 
-        // Premier passage : les billes bien placées (Noires)
+        // Premier passage : les bonnes couleurs bien placées (Noires)
         for (int i = 0; i < 4; i++) {
             if (guess[i].equalsIgnoreCase(secretCode[i])) {
                 black++;
+                white++;
                 secretUsed[i] = true;
                 guessUsed[i] = true;
             }
@@ -254,7 +305,7 @@ public class TCPClient {
         try {
             Socket peerSocket = new Socket(ip, port);
             peerConnections.put(peerName, peerSocket);
-            System.out.println("[P2P] Successfully connected to peer: " + peerName);
+            System.out.println("[P2P] Connection réusite avec: " + peerName);
         } catch (IOException e) {
             System.err.println("[P2P] Failed to connect to peer " + peerName + ": " + e.getMessage());
         }

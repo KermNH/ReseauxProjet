@@ -59,12 +59,14 @@ public class ClientManager implements Runnable {
                     return;
                 }
                 this.playerName = parts[2];
-                this.p2pPort = Integer.parseInt(parts[3]); // Only if you added P2P logic
+                this.p2pPort = Integer.parseInt(parts[3]);
                 TCPServer.activeClients.put(this.playerName, this);
+
+                System.out.println("[CONNEXION] Joueur '" + this.playerName + "' connecté avec le port P2P: " + this.p2pPort);
                 sendMessage("GG|CONNECTED|" + this.playerName);
                 break;
+
             case "CREATE_ROOM":
-                // Guard 3: Ensure we have RoomName, MaxPlayers, and MaxAttempts (5 parts total)
                 if (parts.length < 5) {
                     sendMessage("GG|ERROR|Format: GG|CREATE_ROOM|Name|MaxPlayers|MaxAttempts");
                     return;
@@ -72,49 +74,59 @@ public class ClientManager implements Runnable {
                 String roomName = parts[2];
                 int maxPlayers = Integer.parseInt(parts[3]);
                 int maxAttempts = Integer.parseInt(parts[4]);
+
                 TCPServer.activeRooms.put(roomName, new GameRoom(roomName, this.playerName, maxPlayers, maxAttempts));
+
+                System.out.println("[SALLE] '" + this.playerName + "' a créé la salle '" + roomName + "' (Max: " + maxPlayers + " joueurs, " + maxAttempts + " essais)");
                 sendMessage("GG|ROOM_CREATED|" + roomName);
+                break; // Ajout du break manquant ici
+
             case "LIST_ROOMS":
+                System.out.println("[INFO] '" + this.playerName + "' demande la liste des salles.");
                 String roomList = String.join(",", TCPServer.activeRooms.keySet());
                 sendMessage("GG|ROOM_LIST|" + roomList);
                 break;
-            case "JOIN_ROOM":
-                GameRoom roomToJoin = TCPServer.activeRooms.get(parts[2]); 
-                if (roomToJoin != null && roomToJoin.addPlayer(this.playerName)) {
-                    sendMessage("GG|JOINED_ROOM|" + roomToJoin.roomName + "|" + roomToJoin.getPlayersListStr());
 
-                    // --- NEW P2P MATCHMAKING LOGIC ---
-                    // Tell the new player to connect to all existing players
-                    for (String existingPlayerName : roomToJoin.players) {
-                        if (!existingPlayerName.equals(this.playerName)) {
-                            ClientManager existingClient = TCPServer.activeClients.get(existingPlayerName);
-                            if (existingClient != null) {
-                                // Tell this new client to connect to the existing client
-                                this.sendMessage("GG|CONNECT_PEER|" + existingClient.playerName + "|" + existingClient.ipAddress + "|" + existingClient.p2pPort);
-                                // Tell the existing client to prepare for/connect to the new client
-                                existingClient.sendMessage("GG|CONNECT_PEER|" + this.playerName + "|" + this.ipAddress + "|" + this.p2pPort);
-                            }
-                        }
-                    }
+            case "JOIN_ROOM":
+                String targetRoomName = parts[2];
+                GameRoom roomToJoin = TCPServer.activeRooms.get(targetRoomName);
+
+                // 1. Vérifier si la salle existe
+                if (roomToJoin == null) {
+                    System.out.println("[ERREUR] '" + this.playerName + "' tente de rejoindre une salle inexistante : " + targetRoomName);
+                    sendMessage("GG|ERROR|La salle '" + targetRoomName + "' n'existe pas.");
+                }
+                // 2. Vérifier si le joueur est déjà présent dans la liste des joueurs de cette salle
+                else if (roomToJoin.players.contains(this.playerName)) {
+                    System.out.println("[ERREUR] '" + this.playerName + "' tente de rejoindre '" + targetRoomName + "' mais y est déjà.");
+                    sendMessage("GG|ERROR|Vous êtes déjà dans cette salle !");
+                }
+                // 3. Tenter d'ajouter le joueur (gère le cas "salle pleine")
+                else if (roomToJoin.addPlayer(this.playerName)) {
+                    System.out.println("[REJOINDRE] '" + this.playerName + "' a rejoint la salle '" + targetRoomName + "'");
+                    sendMessage("GG|JOINED_ROOM|" + roomToJoin.roomName + "|" + roomToJoin.getPlayersListStr());
+                }
+                // 4. Si addPlayer retourne false, c'est que la salle est pleine
+                else {
+                    System.out.println("[ERREUR] '" + this.playerName + "' n'a pas pu rejoindre '" + targetRoomName + "' (Salle pleine)");
+                    sendMessage("GG|ERROR|La salle '" + targetRoomName + "' est complète (" + roomToJoin.maxPlayers + " max).");
                 }
                 break;
             case "LEAVE_ROOM":
                 GameRoom roomToLeave = TCPServer.activeRooms.get(parts[2]);
-                if (roomToLeave != null )
-                {
+                if (roomToLeave != null) {
                     roomToLeave.removePlayer(this.playerName);
-                    sendMessage("GG|LEAVE_ROOM|"+roomToLeave.roomName +" :A BIEN ÉTÉ QUITTÉ");
+                    System.out.println("[DÉPART] '" + this.playerName + "' a quitté la salle '" + parts[2] + "'");
+                    sendMessage("GG|LEAVE_ROOM|" + roomToLeave.roomName + " :A BIEN ÉTÉ QUITTÉ");
                 }
                 break;
+
             case "PLAY_SERVER":
                 try {
-                    // Commande attendue : GG|PLAY_SERVER|10
                     int nbTentatives = Integer.parseInt(parts[2]);
-
-                    // On initialise l'objet de jeu
                     this.currentGame = new PlayerVSComputer(nbTentatives);
                     this.isGaming = true;
-
+                    System.out.println("[SOLO] '" + this.playerName + "' lance une partie contre l'ordinateur (" + nbTentatives + " essais)");
                     sendMessage("GG|GAME_STARTED|Bonne chance " + this.playerName);
                 } catch (Exception e) {
                     sendMessage("GG|ERROR|Usage: GG|PLAY_SERVER|nbTentatives");
@@ -122,41 +134,61 @@ public class ClientManager implements Runnable {
                 break;
 
             case "GUESS":
-                // Commande attendue : GG|GUESS|RED|BLUE|GREEN|YELLOW
-                if (this.currentGame != null) {
-                    // Extraction des 4 couleurs (indices 2, 3, 4, 5)
-                    if (parts.length >= 6) {
-                        String[] playerGuess = {parts[2], parts[3], parts[4], parts[5]};
+                if (this.currentGame != null && parts.length >= 6) {
+                    System.out.println("[JEU] Essai reçu de '" + this.playerName + "': " + parts[2] + " " + parts[3] + " " + parts[4] + " " + parts[5]);
+                    String[] playerGuess = {parts[2], parts[3], parts[4], parts[5]};
+                    String response = this.currentGame.handleGuess(playerGuess);
+                    sendMessage(response);
 
-                        // On demande au moteur de jeu d'analyser le coup
-                        String response = this.currentGame.handleGuess(playerGuess);
-                        sendMessage(response);
-
-                        // Si c'est fini, on nettoie
-                        if (this.currentGame.isGameOver()) {
-                            this.currentGame = null;
-                            this.isGaming = false;
-                        }
-                    } else {
-                        sendMessage("GG|ERROR|Format incorrect : GG|GUESS|C1|C2|C3|C4");
+                    if (this.currentGame.isGameOver()) {
+                        System.out.println("[JEU] Partie terminée pour '" + this.playerName + "'. Résultat envoyé.");
+                        this.currentGame = null;
+                        this.isGaming = false;
                     }
                 } else {
-                    sendMessage("GG|ERROR|Aucune partie en cours contre le serveur.");
+                    System.out.println("[ERREUR] '" + this.playerName + "' tente de deviner sans partie active ou format invalide.");
+                    sendMessage("GG|ERROR|Aucune partie active ou format incorrect.");
                 }
                 break;
 
             case "KICK_PLAYER":
-                if (parts.length < 4) return;
-                GameRoom roomToKickFrom = TCPServer.activeRooms.get(parts[2]);
-                String playerToKick = parts[3];
+                if (parts.length < 4) {
+                    sendMessage("GG|ERROR|Format: GG|KICK_PLAYER|RoomName|PlayerName");
+                    break;
+                }
 
-                //on vérifie que la salle existe et que le joueur demandant le kick en est l'admin
-                if (roomToKickFrom != null && roomToKickFrom.adminName.equals(this.playerName)) {
+                String roomname = parts[2];
+                String playerToKick = parts[3];
+                GameRoom roomToKickFrom = TCPServer.activeRooms.get(roomname);
+
+                // 1. Vérifier si la salle existe
+                if (roomToKickFrom == null) {
+                    sendMessage("GG|ERROR|La salle '" + roomname + "' n'existe pas.");
+                    break;
+                }
+
+                // 2. Vérifier si l'envoyeur est bien l'admin
+                if (!roomToKickFrom.adminName.equals(this.playerName)) {
+                    System.out.println("[ALERTE] Tentative de kick non-autorisée par '" + this.playerName + "'");
+                    sendMessage("GG|ERROR|Action refusée : Vous n'êtes pas l'administrateur de cette salle.");
+                    break;
+                }
+
+                // 3. Procéder à l'expulsion
+                if (roomToKickFrom.players.contains(playerToKick)) {
                     roomToKickFrom.removePlayer(playerToKick);
+
+                    // Prévenir le joueur expulsé
                     ClientManager kickedClient = TCPServer.activeClients.get(playerToKick);
                     if (kickedClient != null) {
                         kickedClient.sendMessage("GG|PLAYER_KICKED|" + playerToKick);
                     }
+
+                    // --- NOUVEAU : Confirmer à l'admin ---
+                    System.out.println("[MODÉRATION] Admin '" + this.playerName + "' a expulsé '" + playerToKick + "'");
+                    sendMessage("GG|KICK_SUCCESS|" + playerToKick + "|A été retiré de la salle.");
+                } else {
+                    sendMessage("GG|ERROR|Le joueur '" + playerToKick + "' n'est pas dans cette salle.");
                 }
                 break;
 
@@ -164,20 +196,37 @@ public class ClientManager implements Runnable {
                 if (parts.length < 3) return;
                 GameRoom roomToStart = TCPServer.activeRooms.get(parts[2]);
 
-                if (roomToStart != null) {
+                if (roomToStart != null && roomToStart.adminName.equals(this.playerName)) {
+                    System.out.println("[DÉMARRAGE] La partie commence dans la salle '" + roomToStart.roomName + "' !");
                     String playerList = roomToStart.getPlayersListStr();
-                    // Indique à ts les joueurs que la partie commence
-                    for (String pName : roomToStart.players) {
-                        ClientManager pClient = TCPServer.activeClients.get(pName);
-                        if (pClient != null) {
-                            pClient.sendMessage("GG|GAME_STARTED|" + roomToStart.roomName + "|" + playerList + "|" +roomToStart.maxAttempts);
+
+                    // 1. On parcourt chaque joueur 'A' de la salle
+                    for (String pNameA : roomToStart.players) {
+                        ClientManager clientA = TCPServer.activeClients.get(pNameA);
+                        if (clientA == null) continue;
+
+                        // Envoyer le signal de départ au joueur A
+                        clientA.sendMessage("GG|GAME_STARTED|" + roomToStart.roomName + "|" + playerList + "|" + roomToStart.maxAttempts);
+
+                        // 2. Pour ce joueur A, on lui envoie les infos de connexion de tous les joueurs B (si B != A)
+                        for (String pNameB : roomToStart.players) {
+                            if (!pNameA.equals(pNameB)) {
+                                ClientManager clientB = TCPServer.activeClients.get(pNameB);
+                                if (clientB != null) {
+                                    System.out.println("[P2P] Info envoyée à " + pNameA + " pour se connecter à " + pNameB);
+                                    clientA.sendMessage("GG|CONNECT_PEER|" + clientB.playerName + "|" + clientB.ipAddress + "|" + clientB.p2pPort);
+                                }
+                            }
                         }
                     }
+                } else {
+                    System.out.println("[REFUS] '" + this.playerName + "' a tenté de lancer une salle dont il n'est pas admin.");
+                    sendMessage("GG|ERROR|Action refusée : Seul l'administrateur (" + roomToStart.adminName + ") peut lancer la partie.");
                 }
                 break;
 
             default:
-                System.out.println("Unknown command: " + command);
+                System.out.println("[ALERTE] Commande inconnue de '" + (this.playerName != null ? this.playerName : "Inconnu") + "': " + command);
         }
     }
 
