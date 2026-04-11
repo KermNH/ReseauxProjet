@@ -27,20 +27,20 @@ public class TCPClient {
     private ConcurrentHashMap<String, Integer> playerAttempts = new ConcurrentHashMap<>(); // Pour le Host
 
     public   void main(String[] args) {
-        // 1. Start a P2P Server Socket on a dynamic port (0 means auto-assign)
+
         try {
             ServerSocket p2pServer = new ServerSocket(0);
             myP2PPort = p2pServer.getLocalPort();
             System.out.println("Listening for P2P connections on port: " + myP2PPort);
             
-            // Thread to accept incoming P2P connections
+            // accepter les P2P connections
             new Thread(() -> {
                 while (true) {
                     try {
                         Socket peerSocket = p2pServer.accept();
                         PeerHandler handler = new PeerHandler(peerSocket, this);
                         new Thread(handler).start();
-                        // TODO: You would start a new thread here to handle P2P messages (similar to ClientManager)
+
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -51,7 +51,7 @@ public class TCPClient {
             return;
         }
 
-        // 2. Standard Server Connection
+        //Connection au Server
         try (Socket socket = new Socket(SERVER_IP, SERVER_PORT);
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -59,23 +59,21 @@ public class TCPClient {
 
             System.out.println("Connected to Guess Game Server.");
             
-            // Thread to receive responses from the central server 
+            // Thread pour recevoir les  réponce du server
             Thread listenerThread = new Thread(() -> {
                 try {
                     String serverResponse;
                     while ((serverResponse = in.readLine()) != null) {
-                        //System.out.println("\n[SERVER]: " + serverResponse); //[cite: 43]
                         processMessage(serverResponse);
                     }
                 } catch (IOException e) {
-                    System.out.println("Connection to server lost."); //[cite: 44]
+                    System.out.println("Connection to server lost.");
                 }
             });
-            listenerThread.start(); //[cite: 45]
+            listenerThread.start();
 
-            // Tell user to include the P2P port when connecting
+            // Informe le joueur comment se connecté
             System.out.println("Enter command to connect (e.g., GG|CONNECT|Alice)");
-            //MESSAGE SENDER
             while (true) {
                 String input = scanner.nextLine();
                 String[] parts = input.split("\\|"); //[cite: 48]
@@ -83,7 +81,7 @@ public class TCPClient {
                 if (parts.length < 2 || !parts[0].equals("GG")) {
                     System.out.println("[Warning] Le message devrais commencer par 'GG|' si vous voulez interagire avec le serveur ou les joueur");
                     continue;
-                } //[cite: 48]
+                }
                 String command = parts[1];
                 switch(command){
                     case "SECRET_SET":
@@ -95,7 +93,7 @@ public class TCPClient {
                             this.GameMaster = 1;
                             System.out.println("Combinaison secrète définie ! Vous êtes le Game Master.");
 
-                            // Informer les autres que la partie commence (sans révéler le secret !)
+                            // Informer les autres que la partie commence
                             for(String key : peerConnections.keySet()){
                                 sendMessageToUser(key, "GG|SECRET_SET|" + this.Name);
                             }
@@ -105,6 +103,7 @@ public class TCPClient {
                         break;
 
                     case "GUESS":
+                        //regarde si le jouer a le drois de faire un guess
                         if (this.GameMaster == 0) {
                             System.out.println("[ERREUR] Aucune partie n'est en cours. Attendez que le Game Master définisse le secret.");
                             break;
@@ -120,7 +119,7 @@ public class TCPClient {
 
                         if(parts.length == 6){
                             if(this.GameMaster == -1){
-                                this.myCurrentAttempts++; // Incrémenter localement
+                                this.myCurrentAttempts++;
                                 String msgWithName = addName(input);
                                 sendMessageToUser(GameMasterName, msgWithName);
                             }
@@ -152,11 +151,9 @@ public class TCPClient {
                         out.println(input);
                         break;
                 }
-                
             }
-
         } catch (IOException e) {
-            System.err.println("Could not connect to server: " + e.getMessage()); //[cite: 47]
+            System.err.println("Could not connect to server: " + e.getMessage());
         }
     }
 
@@ -167,7 +164,7 @@ public class TCPClient {
         String command = parts[1];
         switch (command) {
             case "CONNECT_PEER":
-                // Reçu lors du START_GAME pour chaque autre joueur
+                // Reçu lors du START_GAME pour chaque joueur
                 String peerName = parts[2];
                 String peerIp = parts[3];
                 try {
@@ -181,15 +178,14 @@ public class TCPClient {
 
             case "PLAYER_KICKED":
                 System.out.println("\n[ALERTE] Vous avez été expulsé de la salle !");
-                // --- LOGIQUE DE NETTOYAGE ---
-                // 1. Fermer les sockets P2P
+                //Fermer les sockets P2P
                 for (String pName : peerConnections.keySet()) {
                     try {
                         Socket s = peerConnections.get(pName);
                         if (s != null) s.close();
                     } catch (IOException e) { /* Ignoré */ }
                 }
-                // 2. Reset des structures et variables
+                //Reset des structures et variables
                 peerConnections.clear();
                 playerAttempts.clear();
                 GuessNameQueue.clear();
@@ -218,21 +214,6 @@ public class TCPClient {
                 }
                 break;
 
-           /* case "SECRET_SET":
-                // Quelqu'un a défini le secret, on devient officiellement un joueur (guesser)
-                this.GameMaster = -1;
-                this.GameMasterName = parts[2];
-                System.out.println("\n[JEU] " + GameMasterName + " est le Maître du Jeu. À vous de deviner !");
-                break;*/
-
-           /* case "GUESS":
-                // Si le serveur relaie un GUESS (cas rare en Full P2P, mais utile en backup)
-                if (this.GameMaster == 1) {
-                    System.out.println("[INFO] " + parts[6] + " propose : " + parts[2] + " " + parts[3] + " " + parts[4] + " " + parts[5]);
-                    GuessNameQueue.add(parts[6]);
-                }
-                break;*/
-
             case "CONNECTED":
                 this.Name = parts[2];
                 System.out.println("[INFO] Votre nom est enregistré : " + Name);
@@ -248,7 +229,7 @@ public class TCPClient {
                 break;
 
             default:
-                // Pour toutes les autres réponses (ROOM_LIST, etc.)
+                // Pour toutes les autres réponses
                 System.out.println("\n[SERVEUR]: " + message);
                 break;
         }
@@ -261,28 +242,28 @@ public class TCPClient {
         playerAttempts.put(guessingPlayer, current);
 
         int black = 0; // Bien placé
-        int white = 0; // Bonne couleur
+        int malPlaces = 0; // Bonne couleur
 
         // On utilise des drapeaux pour ne pas compter deux fois la même couleurs
         boolean[] secretUsed = new boolean[4];
         boolean[] guessUsed = new boolean[4];
 
-        // Premier passage : les bonnes couleurs bien placées (Noires)
+        //Les bonnes couleurs bien placées
         for (int i = 0; i < 4; i++) {
             if (guess[i].equalsIgnoreCase(secretCode[i])) {
                 black++;
-                white++;
+                malPlaces++;
                 secretUsed[i] = true;
                 guessUsed[i] = true;
             }
         }
 
-        // Second passage : les bonnes couleurs mal placées (Blanches)
+        //Les bonnes couleurs mal placées
         for (int i = 0; i < 4; i++) {
             if (!guessUsed[i]) {
                 for (int j = 0; j < 4; j++) {
                     if (!secretUsed[j] && guess[i].equalsIgnoreCase(secretCode[j])) {
-                        white++;
+                        malPlaces++;
                         secretUsed[j] = true;
                         break;
                     }
@@ -298,7 +279,7 @@ public class TCPClient {
         }
 
         else {
-            return "GG|FEEDBACK|" + white + "|" + black;
+            return "GG|FEEDBACK|" + malPlaces + "|" + black;
         }
     }
     private   void connectToPeer(String peerName, String ip, int port) {

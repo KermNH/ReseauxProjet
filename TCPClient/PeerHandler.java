@@ -58,9 +58,7 @@ public class PeerHandler implements Runnable {
                         case "WINNER":
                             System.out.println("\n[JEU] LA PARTIE EST TERMINÉE ! " + parts[2] + " a gagné !");
                             break;
-                        /*case "NEW_GAME":
-                            System.out.println("\n[JEU] Une nouvelle partie a été lancée.");
-                            break;*/
+
                         case "GAMEOVER":
                             System.out.println("\n[JEU] " + parts[2] + " a épuisé toutes ses tentatives !");
                             break;
