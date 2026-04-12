@@ -109,9 +109,39 @@ public class ClientManager implements Runnable {
             case "LEAVE_ROOM":
                 GameRoom roomToLeave = TCPServer.activeRooms.get(parts[2]);
                 if (roomToLeave != null) {
-                    roomToLeave.removePlayer(this.playerName);
-                    System.out.println("[DÉPART] '" + this.playerName + "' a quitté la salle '" + parts[2] + "'");
-                    sendMessage("GG|LEAVE_ROOM|" + roomToLeave.roomName + " :A BIEN ÉTÉ QUITTÉ");
+                    synchronized (roomToLeave) { 
+                        roomToLeave.removePlayer(this.playerName);
+                        System.out.println("[DÉPART] '" + this.playerName + "' a quitté '" + parts[2] + "'");
+
+                        //Si la salle est vide, on la supprime
+                        if (roomToLeave.players.isEmpty()) {
+                            TCPServer.activeRooms.remove(parts[2]);
+                            System.out.println("[INFO] Salle '" + parts[2] + "' supprimée (vide).");
+                        }
+                        else {
+                            // Si celui qui part est l'admin, on donne les droits au premier joueur restant
+                            if (this.playerName.equals(roomToLeave.adminName)) {
+                                String newAdmin = roomToLeave.players.get(0);
+                                roomToLeave.adminName = newAdmin;
+
+                                System.out.println("[INFO] Nouvel admin pour '" + parts[2] + "' : " + newAdmin);
+                                for (String pName : roomToLeave.players) {
+                                    ClientManager pClient = TCPServer.activeClients.get(pName);
+
+                                    if (pClient != null) {
+                                        if (pName.equals(roomToLeave.adminName)) {
+
+                                            pClient.sendMessage("GG|NEW_ADMIN|" + roomToLeave.roomName + "|Vous êtes maintenant l'administrateur de la salle.");
+                                        } else {
+
+                                            pClient.sendMessage("GG|ADMIN_CHANGED|" + roomToLeave.adminName + "|est le nouvel administrateur de la salle.");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    sendMessage("GG|LEAVE_ROOM|" + parts[2] + " :A BIEN ÉTÉ QUITTÉ");
                 }
                 break;
 

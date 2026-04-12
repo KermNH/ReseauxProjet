@@ -85,6 +85,7 @@ public class TCPClient {
                 String command = parts[1];
                 switch(command){
                     case "SECRET_SET":
+
                         if(parts.length == 6) { // Format attendu: GG|SECRET_SET|Rouge|Bleu|Vert|Jaune
                             this.secretCode[0] = parts[2];
                             this.secretCode[1] = parts[3];
