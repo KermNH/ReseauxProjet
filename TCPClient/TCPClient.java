@@ -8,7 +8,6 @@ import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.LinkedList;
 import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 
 public class TCPClient {
@@ -26,8 +25,11 @@ public class TCPClient {
     private int myCurrentAttempts = 0; // Pour le joueur local
     private ConcurrentHashMap<String, Integer> playerAttempts = new ConcurrentHashMap<>(); // Pour le Host
 
-    public   void main(String[] args) {
+    public static void main(String[] args) {
+        new TCPClient().run();
+    }
 
+    private void run() {
         try {
             ServerSocket p2pServer = new ServerSocket(0);
             myP2PPort = p2pServer.getLocalPort();
@@ -179,22 +181,17 @@ public class TCPClient {
 
             case "PLAYER_KICKED":
                 System.out.println("\n[ALERTE] Vous avez été expulsé de la salle !");
-                //Fermer les sockets P2P
-                for (String pName : peerConnections.keySet()) {
-                    try {
-                        Socket s = peerConnections.get(pName);
-                        if (s != null) s.close();
-                    } catch (IOException e) { /* Ignoré */ }
-                }
-                //Reset des structures et variables
-                peerConnections.clear();
-                playerAttempts.clear();
-                GuessNameQueue.clear();
-                this.GameMaster = 0;
-                this.maxAttempts = 0;
-                this.myCurrentAttempts = 0;
-                this.GameMasterName = null;
+                disconnectFromRoomPeers();
+                break;
 
+            case "LEAVE_ROOM":
+                System.out.println("\n[INFO] Vous avez quitté la salle : " + parts[2]);
+                disconnectFromRoomPeers();
+                break;
+
+            case "ROOM_PLAYER_LEFT":
+                System.out.println("\n[INFO] " + parts[2] + " a quitté la salle. Les connexions P2P sont fermées.");
+                disconnectFromRoomPeers();
                 break;
 
             case "GAME_STARTED":
@@ -283,6 +280,27 @@ public class TCPClient {
             return "GG|FEEDBACK|" + malPlaces + "|" + black;
         }
     }
+
+    public void disconnectFromRoomPeers() {
+        for (String pName : peerConnections.keySet()) {
+            try {
+                Socket s = peerConnections.get(pName);
+                if (s != null && !s.isClosed()) {
+                    s.close();
+                }
+            } catch (IOException e) {}
+        }
+
+        peerConnections.clear();
+        playerAttempts.clear();
+        GuessNameQueue.clear();
+        this.GameMaster = 0;
+        this.maxAttempts = 0;
+        this.myCurrentAttempts = 0;
+        this.GameMasterName = null;
+        this.secretCode = new String[4];
+    }
+
     private   void connectToPeer(String peerName, String ip, int port) {
         try {
             Socket peerSocket = new Socket(ip, port);

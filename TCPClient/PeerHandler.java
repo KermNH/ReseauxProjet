@@ -57,10 +57,12 @@ public class PeerHandler implements Runnable {
                             break;
                         case "WINNER":
                             System.out.println("\n[JEU] LA PARTIE EST TERMINÉE ! " + parts[2] + " a gagné !");
+                            //parentClient.disconnectFromRoomPeers();
                             break;
 
                         case "GAMEOVER":
                             System.out.println("\n[JEU] " + parts[2] + " a épuisé toutes ses tentatives !");
+                            //parentClient.disconnectFromRoomPeers();
                             break;
                     }
                 }

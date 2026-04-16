@@ -46,6 +46,7 @@ public class ClientManager implements Runnable {
         String command = parts[1]; // comme c'est la deuxieme partie la plus importante on regarde que celle la pour le moment
 
         // envoyer des messages d'erreur si la requete n'est pas possible
+        
         switch (command) {
             case "CONNECT":
                 if (parts.length < 4) {
@@ -61,8 +62,14 @@ public class ClientManager implements Runnable {
                 break;
 
             case "CREATE_ROOM":
+                if (!checkPlayerConnection()) return;
                 if (parts.length < 5) {
                     sendMessage("GG|ERROR|Format: GG|CREATE_ROOM|Name|MaxPlayers|MaxAttempts");
+                    return;
+                }
+                if (isPlayerInAnyRoom()) {
+                    System.out.println("[REFUS] '" + this.playerName + "' a tenté de créer une salle alors qu'il est déjà dans une salle.");
+                    sendMessage("GG|ERROR|Vous devez d'abord quitter votre salle actuelle avant d'en créer une nouvelle.");
                     return;
                 }
                 String roomName = parts[2];
@@ -76,12 +83,14 @@ public class ClientManager implements Runnable {
                 break;
 
             case "LIST_ROOMS":
+                if (!checkPlayerConnection()) return;
                 System.out.println("[INFO] '" + this.playerName + "' demande la liste des salles.");
                 String roomList = String.join(",", TCPServer.activeRooms.keySet());
                 sendMessage("GG|ROOM_LIST|" + roomList);
                 break;
 
             case "JOIN_ROOM":
+                if (!checkPlayerConnection()) return;
                 String targetRoomName = parts[2];
                 GameRoom roomToJoin = TCPServer.activeRooms.get(targetRoomName);
 
@@ -107,6 +116,7 @@ public class ClientManager implements Runnable {
                 }
                 break;
             case "LEAVE_ROOM":
+                if (!checkPlayerConnection()) return;
                 GameRoom roomToLeave = TCPServer.activeRooms.get(parts[2]);
                 if (roomToLeave != null) {
                     synchronized (roomToLeave) { 
@@ -119,6 +129,13 @@ public class ClientManager implements Runnable {
                             System.out.println("[INFO] Salle '" + parts[2] + "' supprimée (vide).");
                         }
                         else {
+                            for (String pName : roomToLeave.players) {
+                                ClientManager pClient = TCPServer.activeClients.get(pName);
+                                if (pClient != null) {
+                                    pClient.sendMessage("GG|ROOM_PLAYER_LEFT|" + this.playerName);
+                                }
+                            }
+
                             // Si celui qui part est l'admin, on donne les droits au premier joueur restant
                             if (this.playerName.equals(roomToLeave.adminName)) {
                                 String newAdmin = roomToLeave.players.get(0);
@@ -146,6 +163,7 @@ public class ClientManager implements Runnable {
                 break;
 
             case "PLAY_SERVER":
+                if (!checkPlayerConnection()) return;
                 try {
                     int nbTentatives = Integer.parseInt(parts[2]);
                     this.currentGame = new PlayerVSComputer(nbTentatives);
@@ -158,6 +176,7 @@ public class ClientManager implements Runnable {
                 break;
 
             case "GUESS":
+                if (!checkPlayerConnection()) return;
                 if (this.currentGame != null && parts.length >= 6) {
                     System.out.println("[JEU] Essai reçu de '" + this.playerName + "': " + parts[2] + " " + parts[3] + " " + parts[4] + " " + parts[5]);
                     String[] playerGuess = {parts[2], parts[3], parts[4], parts[5]};
@@ -176,6 +195,7 @@ public class ClientManager implements Runnable {
                 break;
 
             case "KICK_PLAYER":
+                if (!checkPlayerConnection()) return;
                 if (parts.length < 4) {
                     sendMessage("GG|ERROR|Format: GG|KICK_PLAYER|RoomName|PlayerName");
                     break;
@@ -208,6 +228,13 @@ public class ClientManager implements Runnable {
                         kickedClient.sendMessage("GG|PLAYER_KICKED|" + playerToKick);
                     }
 
+                    for (String pName : roomToKickFrom.players) {
+                        ClientManager pClient = TCPServer.activeClients.get(pName);
+                        if (pClient != null) {
+                            pClient.sendMessage("GG|ROOM_PLAYER_LEFT|" + playerToKick);
+                        }
+                    }
+
                     //Confirmer à l'admin
                     System.out.println("[MODÉRATION] Admin '" + this.playerName + "' a expulsé '" + playerToKick + "'");
                     sendMessage("GG|KICK_SUCCESS|" + playerToKick + "|A été retiré de la salle.");
@@ -217,6 +244,7 @@ public class ClientManager implements Runnable {
                 break;
 
             case "START_GAME":
+                if (!checkPlayerConnection()) return;
                 if (parts.length < 3) return;
                 GameRoom roomToStart = TCPServer.activeRooms.get(parts[2]);
 
@@ -256,5 +284,24 @@ public class ClientManager implements Runnable {
 
     private void sendMessage(String msg) {
         out.println(msg);
+    }
+
+    private boolean isPlayerInAnyRoom() {
+        for (GameRoom room : TCPServer.activeRooms.values()) {
+            synchronized (room) {
+                if (room.players.contains(this.playerName)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean checkPlayerConnection() {
+        if (this.playerName == null) {
+            System.out.println("[ERREUR] Joueur non connecté, impossible de traiter la commande: ");
+            return false;
+        }
+        return true;
     }
 }
